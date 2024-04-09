@@ -53,6 +53,7 @@ for each of the rings. These pointers are kept in NIC memory.
 6. Host then increments the head pointer through MMIO write.
 7. NIC sees the new head pointer, meaning host received the packet.
 
+## Glossary ##
 
 1. **DMA (Direct Memory Access):**
 
