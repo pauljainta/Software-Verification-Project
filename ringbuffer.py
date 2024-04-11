@@ -58,35 +58,3 @@ class RingBuffer:
         item = self.buffer[self.head]
         self.head = (self.head + 1) % len(self.buffer)
         return item
-
-
-# Example usage:
-cpu = CPU()
-nic = NIC()
-
-# Simulate transmit path
-packet_data = b"Hello, NIC!"
-cpu.write_packet_to_buffer(packet_data)
-descriptor = cpu.create_descriptor(id(cpu.tx_packet_buffer))
-cpu.write_descriptor_to_ring_buffer(descriptor)
-cpu.increment_head_pointer()
-
-# Simulate receive path
-nic.receive_packet(packet_data)
-descriptor = id(nic.rx_packet_buffer)
-nic.write_descriptor_to_ring_buffer(descriptor)
-nic.increment_tail_pointer()
-
-# Verify using ring buffer
-tx_ring_buffer = RingBuffer(16)
-rx_ring_buffer = RingBuffer(16)
-for desc in cpu.tx_desc_ring_buffer:
-    tx_ring_buffer.enqueue(desc)
-for desc in nic.rx_desc_ring_buffer:
-    rx_ring_buffer.enqueue(desc)
-
-print("TX Ring Buffer Content:", tx_ring_buffer.buffer)
-print("RX Ring Buffer Content:", rx_ring_buffer.buffer)
-
-
-
