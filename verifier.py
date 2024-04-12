@@ -1,6 +1,7 @@
 import random
 import string
 import unittest
+import argparse
 from ringbuffer import *
 
 
@@ -62,10 +63,20 @@ class TestRingBufferOperations(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    # Run the test suite 1000000 times
-    for i in range(1000000):
-        random.seed()  # Reset the random seed for each iteration to get different random inputs
-        try:
-            unittest.main()
-        except:
-            pass    
+    # Create argument parser
+    parser = argparse.ArgumentParser(description="Run test cases with customizable count")
+    parser.add_argument("--test-count", type=int, default=10000, help="Number of times to run the test suite")
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Open a file to write the test results
+    with open("result.txt", "w") as file:
+        # Redirect the output to the file
+        runner = unittest.TextTestRunner(stream=file)
+        
+        # Run the test suite
+        for i in range(args.test_count):
+            print(f"TEST NO {i}")
+            random.seed()  # Reset the random seed for each iteration to get different random inputs
+            runner.run(unittest.TestLoader().loadTestsFromTestCase(TestRingBufferOperations))
