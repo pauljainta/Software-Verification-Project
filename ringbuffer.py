@@ -200,6 +200,40 @@ class TestRingBufferOperations(unittest.TestCase):
         self.assertEqual(rx_head, rx_tail, f"Test case 'test_transmit_path_NIC_to_CPU_Empty_Buffer' failed for packet {packet_data}: Head and Tail Mismatch after Transmission")
 
 
+    def test_rx_buffer_full_CPU_write_fail(self):
+        # Fill up the RX buffer
+        for i in range(RX_DESC_RING_SIZE):
+            descriptor = id(bytearray())  # Simulate different packet addresses
+            rx_desc_ring_buffer[i] = descriptor
+
+        cpu = CPU()
+        packet_data = bytearray(random.choices(string.ascii_lowercase.encode(), k=10))  # Example packet data
+
+        # Attempt to write a packet to the full RX buffer
+        cpu.write_packet_to_buffer(packet_data)
+
+        # Ensure the buffer state remains unchanged
+        self.assertEqual(rx_packet_buffer, bytearray(RX_PACKET_BUFFER_SIZE), "Test case 'test_rx_buffer_full_CPU_write_fail' failed: RX buffer modified when full")
+        self.assertEqual(rx_desc_ring_buffer.count(0), 0, "Test case 'test_rx_buffer_full_CPU_write_fail' failed: RX descriptor ring buffer modified when full")
+
+
+    def test_tx_buffer_full_NIC_write_fail(self):
+        # Fill up the RX buffer
+        for i in range(RX_DESC_RING_SIZE):
+            descriptor = id(bytearray())  # Simulate different packet addresses
+            tx_desc_ring_buffer[i] = descriptor
+
+        nic = NIC()
+        packet_data = bytearray(random.choices(string.ascii_lowercase.encode(), k=10))  # Example packet data
+
+        # Attempt to write a packet to the full RX buffer
+        nic.write_packet_to_buffer(packet_data)
+
+        # Ensure the buffer state remains unchanged
+        self.assertEqual(tx_packet_buffer, bytearray(RX_PACKET_BUFFER_SIZE), "Test case 'test_tx_buffer_full_NIC_write_fail' failed: TX buffer modified when full")
+        self.assertEqual(tx_desc_ring_buffer.count(0), 0, "Test case 'test_tx_buffer_full_CPU_write_fail' failed: TX descriptor ring buffer modified when full")
+
+
 if __name__ == '__main__':
     # Create argument parser
     parser = argparse.ArgumentParser(description="Run test cases with customizable count")
