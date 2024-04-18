@@ -2,18 +2,19 @@
 
 abstract sig Operation {}
 
-one sig DMA, MMIO extends Operation {}
+sig DMA, MMIO extends Operation {}
 
 abstract sig Marker {}
 
-one sig Filled, Empty, Head, Tail extends Marker {}
+sig Filled, Empty, Head, Tail extends Marker {}
 
 one sig RingBuffer {
     buffer: pfunc Int -> Marker
 }
 
 pred InitValidRing {
-    all i: Int | (i < 0 or i > 7) implies RingBuffer.buffer[i] = Empty
+    all i: Int | (i < 0 or i > 7) implies no RingBuffer.buffer[i]
+    all i: Int | (i >= 0 and i <= 7) implies RingBuffer.buffer[i] = Empty
 }
 
 pred InitRing {
@@ -21,18 +22,17 @@ pred InitRing {
 }
 
 pred IsRingEmpty {
-    #{i: Int | RingBuffer.buffer[i] = Filled} = 0
+    #{i: Int | RingBuffer.buffer[i] = Filled} < 8
 }
 
 pred IsRingFull {
-    #{i: Int | RingBuffer.buffer[i] = Filled} = 7
+    #{i: Int | RingBuffer.buffer[i] = Filled} = 8
 }
 
 fun AddOneWrap(m: Int): Int {
     let ret = add[m, 1] {
         ret < 8 => ret else 0
     }
-
 }
 
 pred DMAWrite {
@@ -56,6 +56,7 @@ pred PCIEOperation[op: Operation] {
 }
 
 run {
+    InitValidRing
     InitRing
     some op: Operation | PCIEOperation[op]
 } for exactly 5 Int
