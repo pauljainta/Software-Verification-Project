@@ -19,7 +19,7 @@ unittest
 argparse
 ```
 
-This will generate a text file name results.txt. This file will
+This will generate a text file name `result.txt`. This file will
 contains all the results for the tests.
 
 ### Forge model (Under implementation)
