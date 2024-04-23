@@ -1,14 +1,55 @@
+Modeling CPU-NIC communication over PCIe
+
 # Introduction
 
-It is absolutely necessary to have effective data management in order to achieve maximum performance and usage of resources in computer systems. When it comes to this domain, one of the most significant challenges is the creation of data structures that enable the transfer of data between components in a quick and dependable manner, notably between network interface controllers (NICs) and central processing units (CPUs). In order to overcome this obstacle, the ring buffer is a fundamental data structure that is widely utilized in real-time systems and networking.
+Traditionally in data centers distributed workloads were run in a single server model,
+where the workload is sharded and each shard is run in different servers. This is even
+true for modern cloud workloads. This model prohibits efficient sharing of data between
+different servers, also the workload is bottlenecked by the least memory available server.
 
-During the course of this project, our major objective is to develop and implement a ring buffer that is specifically adapted to the interaction that occurs between NICs and CPUs. A number of essential requirements must be satisfied by this ring buffer:
+For efficient memory sharing in a data center between servers new technologies are gaining
+traction for example RDMA. But this can only directly access another servers memory directly.
+When sharing memory between servers an important aspect in maintaining consistency. RDMA
+alone doesn't provide answer to this question.
 
-The process of ensuring that data storage and retrieval are both efficient and reliable in order to facilitate communication that is seamless between the NIC and the CPU.
-Making it possible for data to flow without interruption in both directions by facilitating both transmitting and receiving processes.
-Facilitating seamless integration with pre-existing network interface controller (NIC) and central processing unit (CPU) architectures in order to minimize overhead and maximize performance.
-In order to ensure that the ring buffer implementation is both valid and functional, it is necessary to implement a stringent verification method.
-In order to accomplish these goals, we make use of previously conducted research and established best practices in the field of data structure design, with a particular emphasis on the specific requirements of NIC-CPU connection. We have developed a method that combines theoretical principles with practical implementation techniques in order to produce a ring buffer solution that is both reliable and effective. The purpose of our implementation is to confirm the effectiveness and reliability of our implementation in real-world settings by means of comprehensive testing and verification. This will ensure that data flow between NICs and CPUs is carried out without any obstacles.
+To solve this problem multiple new cache coherent interconnects are being developed.
+For example CXL, NVLink etc. These interconnect are either implemented on top of PCIe
+or completely new architecture design.
+
+PCIe is widely used for sending and receiving data from host to the peripheral devices.
+For example network interface card(NIC), storage device etc. This technology is being used
+for a long time now. Now the question is why do we need new interconnects? Can we implement
+a coherent interconnect just using PCIe?
+
+To create an interconnection network with PCIe we have all the technology already available.
+With PCIe not-transparent bridge (NTB) two server can communicate and exchange data just using
+the PCIe protocol. Also, there is NTB switches available which can be used to establish communication
+between multiple servers.
+
+To understand if it is possible to create a cache coherent interconnect between severs
+using PCIe we need to understand what operations are supported by PCIe? What is the
+ordering guarantees between those operations?
+
+The goal of our project is to answer those questions by modeling PCIe communication.
+For modeling PCIe communication between CPU and devices we have choose to model
+a producer-consumer ring buffer, which is the most prevalent data structure that
+used for communication over PCIe. For example NIC uses a producer-consumer ring buffer
+to send/receive packets. Ultimately our models will allow us to generate litmus
+tests which then we will be able to apply on real hardware to find out what guarantees
+each of them provides and create a memory model for a coherent interface implemented
+on top of PCIe.
+
+To this end we have following contribution in our project:
+
+1. Understanding different operations over PCIe.
+2. Understanding the ordering guarantees between those operations.
+3. Understand producer-consumer ring buffer in the context of PCIe communication.
+4. Understand how a device such as NIC use such producer-consumer structure using PCIe semantics.
+5. Create an operational model using Python.
+6. Preliminary model using Forge modeling language to formally test PCIe communication.
+
+In the following text we are giving a brief primer on PCIe and describe
+the transmit and receive path for CPU-NIC communication.
 
 There is two kinds of operations that happens over PCIe. DMA and MMIO.
 
@@ -24,6 +65,12 @@ or 64bit value.
 NIC can do DMA read to read from that memory and DMA write to
 write into that memory. DMA is used to read/write larger values,
 for example 1KB, 4KB etc.
+
+**PCIe operations:** These DMA and MMIO operations are broken down
+to PCIe read and write operations. There are two variant of PCIe read/write
+operation. Posted and Non-posted. In non-posted operations a completion event
+is generated after completing the operations, which act as acknowledgement.
+On the otherhand with posted operation no completion event is generated.
 
 **Packet buffers:** A packet buffer is a piece of memory where transmitting
 and received packets are kept. There is two packet buffers. Transmit buffer(TX buffer),
@@ -60,51 +107,9 @@ for each of the rings. These pointers are kept in NIC memory.
 6. Host then increments the head pointer through MMIO write.
 7. NIC sees the new head pointer, meaning host received the packet.
 
-![NIC CPU COMMUNICATION](./nic-buffers.png)
-
-
-## Glossary ##
-
-1. **DMA (Direct Memory Access):**
-
-   - DMA is a mechanism that allows hardware devices, like the NIC, to access system memory (kernel memory) directly without involving the CPU.
-   - In the context of networking, DMA enables the NIC to transfer data to and from the kernel memory without CPU intervention, which improves system performance.
-   - When data arrives at the NIC, instead of involving the CPU to transfer it to kernel memory, the NIC's DMA controller handles the transfer directly.
-   - This process offloads the data transfer task from the CPU, allowing it to focus on other tasks while data is being transferred between the NIC and kernel memory.
-
-2. **MMIO (Memory-Mapped I/O):**
-
-   - MMIO is a method for accessing hardware devices, such as the NIC, as if they were memory-mapped locations.
-   - In MMIO, certain addresses in the system's address space are reserved for communicating with hardware devices.
-   - When the CPU wants to communicate with a hardware device, it reads from or writes to these memory-mapped addresses, triggering operations on the device.
-   - MMIO is commonly used for configuring and controlling hardware devices, such as programming the NIC with network settings or initiating data transfers.
-
-**Process with DMA and MMIO:**
-
-**Data Reception (NIC to Kernel Memory):**
-
-- Data arrives at the NIC from the network.
-- The NIC's DMA controller, using MMIO, accesses the receive ring buffer in kernel memory directly.
-- The NIC writes the incoming data directly to the receive ring buffer using DMA.
-- Once the data transfer is complete, the NIC may raise an interrupt to notify the CPU of the newly received data.
-
-**Consumption by Kernel:**
-
-- Upon receiving the interrupt or polling the receive ring buffer, the CPU's kernel processes the received data.
-- The kernel parses and analyzes the data, performing necessary networking operations (e.g., protocol handling, packet filtering).
-- If further processing is required, the kernel may copy the data from the receive ring buffer to other kernel data structures.
-
-**Data Transmission (Kernel Memory to NIC):**
-
-- When the CPU needs to transmit data, it places the data into the transmit ring buffer in kernel memory.
-- The NIC's DMA controller, using MMIO, accesses the transmit ring buffer directly.
-- The NIC reads the data from the transmit ring buffer using DMA and sends it out over the network.
-- Once the transmission is complete, the NIC may raise an interrupt to notify the CPU.
-
-In this process, DMA and MMIO work together to facilitate efficient data transfer between the NIC, CPU, and kernel memory, while the producer-consumer model ensures synchronized and efficient communication.
-
-
 # Status
+
+## Operational Model
 
 Currently, the project is in the implementation phase. We have successfully designed and implemented the core functionalities of the ring buffer, including transmit and receive operations. However, there are still several areas that require further refinement and optimization. We have used both Python and Forge to model different scenarios. In Python, we implemented six test cases to verify our model and ran those test cases for 10000 different packets. We found out the scenarios where our test cases fail i.e. the model fails to perform as expected. 
 
@@ -114,8 +119,24 @@ Next steps include:
 - Optimizing performance and memory utilization to enhance efficiency
 - Integrating the ring buffer with real-world systems and applications to evaluate its practical utility
 
+## Forge Model
+
+The forge model is currently in implementation stage. Following functionalities are implemented.
+Currently with few minor modifications it is possible to simulate the receive path.
+Where NIC is producing and CPU is consuming.
+
+1. Sigs and predicate for ring buffer.
+2. Sigs and predicate for DMA write and MMIO write operations.
+
+The next steps include
+
+1. Write predicate for DMA read and MMIO read to simulate transmit path.
+2. Break down and write predicate for PCIe read and write ops.
+3. Incorporate orderings from PCIe spec.
 
 # Demo
+
+## Operational model with Python
 
 Taking into consideration the following scenario will allow us to illustrate the functionality of our ring buffer implementation:
 
@@ -123,7 +144,15 @@ Let's say that we have a central processing unit (CPU) and a network interface c
 
 An illustration of the interaction between the central processing unit (CPU), network interface controller (NIC), and ring buffer can be visualized through the use of code snippets and graphics.
 
+## Axiomatic model with Forge
+
+Currently under implementation.
+
 # Implementation
+
+## Operational model
+
+For the operational model we have used python programming language. The pytest infrastructure is used for implementing the testing of different PCIe operations.
 
 In order to manage the complex dance of data transmission that takes place between the central processing unit (CPU) and the network interface card (NIC), our ring buffer implementation incorporates a wide variety of necessary classes. A range of methods that are customized to the task at hand, including packet transmission, descriptor management, and other techniques, is provided by the CPU class, which stands out as the most prominent component of this architecture. The Network Interface Card (NIC) class, on the other hand, is the one that is responsible for managing buffers and ensuring that the delicate balance between data reception and processing is maintained.
 
@@ -135,6 +164,28 @@ Furthermore, our implementation places a high priority on speed and resource opt
 
 In a nutshell, the implementation of our ring buffer is the result of a combination of thorough optimization, meticulous design, and unyielding commitment to quality. We are committed to pushing the boundaries of what is possible in the realm of CPU-NIC communication, fostering innovation and growth in the field of computer systems and software engineering. This commitment will continue as we continue to refine and expand upon this foundation.
 
+## Forge Model
+
+The ring buffer is implemented as sig with partial functions. These represents a one dimensional array which have integer positions.
+Each position holds a slot which can be marked with set of Markers sig. This abstract Marker sig tags the buffer. This tag can
+be a combination of Head, Tail, Empty or Filled.
+
+Initial predicate: This predicated ensures
+- Initially all the positions for the ring buffer slots are valid.
+- Initially all the slots are tagged as empty except the first one.
+- The first slot is additionally tagged as Head + Tail
+
+DMA Write predicate: Models a DMA write operation for writing packet buffer from NIC to CPU in transmit path
+- Checks if the ring buffer is full
+- Checks if the i-th position has the tail, in that case move tail to next wrapping slot
+- Checks tail is always ahead of head
+- Marks the i-th slot as filled
+
+MMIO write predicate: Models NIC register head increment to singal NIC receiving of the packet by consuming the slot
+- Checks if the ring buffer is empty
+- Check if the i-th position has head, in that case move head to next wrapping slot
+- Check head is always behind tail
+- Mark the i-th position as Empty.
 
 # Future Work
 
@@ -145,10 +196,12 @@ Future work on this project will focus on:
 
 # Discussion
 
-We have received significant insights into the complexities of creating and implementing communication protocols and processes between these two components as a result of reflecting on this project from the standpoint of the central processing unit (CPU) and the network interface controller (NIC). Challenges such as optimizing performance and assuring reliability have brought to light the importance of thorough testing and verification procedures in order to guarantee a seamless flow of data.
+This project helped us to peak at the underlying mechanism for PCIe communication
+which is one of the basic building block in today's computer systems. While working
+on the project we didn't find lot of work in this space. Huge memory requirement of modern
+datacenters which is accelerating the availability of new coherent interconnects
+made it even more important to formally study PCIe communication.
 
-
-We plan to approach projects of a similar nature in the future with a stronger emphasis on modular design and scalability. This will ensure that the solutions are able to support future upgrades with ease and are able to adapt to changing requirements. In addition, we intend to investigate more advanced methods for performance optimization, making use of the latest advancements in both hardware and software, with the goal of further improving the efficiency and effectiveness of data transfer activities between the central processing unit (CPU) and the network interface card (NIC).
-
-
-In all, this project has been a very beneficial educational experience for us. It has not only provided us with practical insights into the difficulties of CPU-NIC communication, but it has also equipped us with the skills and knowledge that are necessary to solve similar challenges in the field of computer systems and software engineering. These are the kinds of lessons that we are looking forward to applying to future undertakings, where we want to make a contribution to the development of technology and innovation in this field.
+While implementing the axiomatic/formal model with Forge we found that Forge documentation is
+decent but lack of examples made is hard to understand some of the concepts which was pretty
+new for us.
